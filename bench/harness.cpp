@@ -35,12 +35,14 @@ int main(int argc, char** argv) {
     int N = DEFAULT_N;
     int timed_iters = 50;
     int warmup_iters = 10;
+    double fixed_baseline_us = -1.0;
     std::string json_path = "benchmark_result.json";
 
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--k") == 0 && i + 1 < argc) K = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--n") == 0 && i + 1 < argc) N = std::atoi(argv[++i]);
         else if (std::strcmp(argv[i], "--iters") == 0 && i + 1 < argc) timed_iters = std::atoi(argv[++i]);
+        else if (std::strcmp(argv[i], "--baseline") == 0 && i + 1 < argc) fixed_baseline_us = std::atof(argv[++i]);
         else if (std::strcmp(argv[i], "--json") == 0 && i + 1 < argc) json_path = argv[++i];
     }
 
@@ -72,6 +74,9 @@ int main(int argc, char** argv) {
     std::cout << "  Group Size    : " << GROUP_SIZE << " weights/group\n";
     std::cout << "  Total Weights : " << (static_cast<double>(K) * N / 1e6) << " M weights\n";
     std::cout << "  Weight Memory : " << (static_cast<double>(bytes_qweight) / (1024.0 * 1024.0)) << " MB (INT4 packed)\n";
+    if (fixed_baseline_us > 0.0) {
+        std::cout << "  Fixed Baseline: " << std::fixed << std::setprecision(2) << fixed_baseline_us << " us\n";
+    }
     std::cout << "-----------------------------------------------------------------\n";
 
     // Deterministic random data generation
@@ -90,23 +95,17 @@ int main(int argc, char** argv) {
     std::memset(y_ref, 0, bytes_y);
     std::memset(y_cand, 0, bytes_y);
 
-    std::cout << "[1/3] Running Reference Oracle...\n";
-    auto ref_t0 = std::chrono::high_resolution_clock::now();
+    std::cout << "[1/3] Running Reference Oracle for Ground Truth...\n";
     reference_w4a16_gemv(x, qweight, scales, zeros, y_ref, K, N);
-    auto ref_t1 = std::chrono::high_resolution_clock::now();
-    double ref_latency_us = std::chrono::duration<double, std::micro>(ref_t1 - ref_t0).count();
 
-    // Additional runs to get a stable baseline reference average
-    const int ref_samples = 5;
-    double ref_total_us = ref_latency_us;
-    for (int i = 1; i < ref_samples; ++i) {
+    double baseline_mean_us = fixed_baseline_us;
+    if (baseline_mean_us <= 0.0) {
         auto t0 = std::chrono::high_resolution_clock::now();
         reference_w4a16_gemv(x, qweight, scales, zeros, y_ref, K, N);
         auto t1 = std::chrono::high_resolution_clock::now();
-        ref_total_us += std::chrono::duration<double, std::micro>(t1 - t0).count();
+        baseline_mean_us = std::chrono::duration<double, std::micro>(t1 - t0).count();
     }
-    double baseline_mean_us = ref_total_us / ref_samples;
-    std::cout << "      Baseline Reference Latency: " << std::fixed << std::setprecision(2) 
+    std::cout << "      Baseline Reference: " << std::fixed << std::setprecision(2) 
               << baseline_mean_us << " us (" << (baseline_mean_us / 1000.0) << " ms)\n";
 
     std::cout << "[2/3] Verifying Numerical Correctness of Candidate...\n";
@@ -189,14 +188,14 @@ int main(int argc, char** argv) {
     std::cout << "-----------------------------------------------------------------\n";
     std::cout << "  BENCHMARK RESULTS\n";
     std::cout << "-----------------------------------------------------------------\n";
-    std::cout << "  Baseline Latency (Mean) : " << std::fixed << std::setprecision(2) << baseline_mean_us << " us\n";
-    std::cout << "  Candidate Latency (Min) : " << min_us << " us\n";
-    std::cout << "  Candidate Latency (p50) : " << p50_us << " us\n";
-    std::cout << "  Candidate Latency (p90) : " << p90_us << " us\n";
-    std::cout << "  Candidate Latency (Mean): " << mean_us << " us (" << (mean_us / 1000.0) << " ms)\n";
-    std::cout << "  Memory Bandwidth        : " << bandwidth_gbps << " GB/s\n";
-    std::cout << "  Throughput              : " << tflops << " TFLOPs\n";
-    std::cout << "  SPEEDUP                 : " << std::setprecision(2) << speedup << "x\n";
+    std::cout << "  Baseline Latency (Target) : " << std::fixed << std::setprecision(2) << baseline_mean_us << " us\n";
+    std::cout << "  Candidate Latency (Min)   : " << min_us << " us\n";
+    std::cout << "  Candidate Latency (p50)   : " << p50_us << " us\n";
+    std::cout << "  Candidate Latency (p90)   : " << p90_us << " us\n";
+    std::cout << "  Candidate Latency (Mean)  : " << mean_us << " us (" << (mean_us / 1000.0) << " ms)\n";
+    std::cout << "  Memory Bandwidth          : " << bandwidth_gbps << " GB/s\n";
+    std::cout << "  Throughput                : " << tflops << " TFLOPs\n";
+    std::cout << "  SPEEDUP                   : " << std::setprecision(2) << speedup << "x\n";
     std::cout << "=================================================================\n";
 
     std::ofstream json_file(json_path);

@@ -1,0 +1,9 @@
+{
+  "baseline_latency_us": 4535.60,
+  "hardware": "12th Gen Intel Core i5-12400F",
+  "matrix": {
+    "K": 4096,
+    "N": 4096,
+    "group_size": 128
+  }
+}
