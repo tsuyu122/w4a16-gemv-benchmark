@@ -1,0 +1,6 @@
+*.o
+*.exe
+w4a16_bench
+benchmark_result.json
+build/
+.vscode/
